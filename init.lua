@@ -1,20 +1,18 @@
--- path 0.1.0 by paramat
+-- path 0.1.1 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
 
 -- Parameters
 
-local TPATH = 0.002
-
 -- 2D noise for base terrain
 
 local np_base = {
 	offset = 0,
 	scale = 1,
-	spread = {x=1024, y=1024, z=1024},
+	spread = {x=512, y=512, z=512},
 	seed = -9111,
-	octaves = 5,
+	octaves = 4,
 	persist = 0.5
 }
 
@@ -94,14 +92,18 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	for z = z0, z1 do
 		for y = y0, y1 do
 			local vi = area:index(x0, y, z)
-			local n_xprebase
+			local n_xprebase = false
 			for x = x0, x1 do
 				local nodid = data[vi]
 				local n_base = nvals_base[nixz]
+				local n_zprebase = nvals_base[(nixz - 80)]
 				if y == 1 then
 					if (x - x0 > 0
 					and ((n_base >= 0 and n_xprebase < 0)
-					or (n_base < 0 and n_xprebase >= 0))) then
+					or (n_base < 0 and n_xprebase >= 0)))
+					or (z - z0 > 0
+					and ((n_base >= 0 and n_zprebase < 0)
+					or (n_base < 0 and n_zprebase >= 0))) then
 						data[vi] = c_roadwhite
 						for i = -3, 3 do
 						for k = -3, 3 do
