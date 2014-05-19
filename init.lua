@@ -1,19 +1,27 @@
--- path 0.1.1 by paramat
+-- path 0.1.2 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
 
+-- x overgeneration
+-- desert sand, cacti
+-- width parameter
+-- tune diagonal width
+
 -- Parameters
+
+local WID = 3 -- Lane width
+local CACCHA = 1 / 128 ^ 2 -- Cactus chance per node
 
 -- 2D noise for base terrain
 
 local np_base = {
 	offset = 0,
 	scale = 1,
-	spread = {x=512, y=512, z=512},
+	spread = {x=1024, y=1024, z=1024},
 	seed = -9111,
-	octaves = 4,
-	persist = 0.5
+	octaves = 5,
+	persist = 0.67
 }
 
 -- Nodes
@@ -32,9 +40,22 @@ minetest.register_node("path:roadwhite", {
 	sounds = default.node_sound_stone_defaults(),
 })
 
+minetest.register_node("path:cactus", {
+	description = "Cactus",
+	tiles = {"default_cactus_top.png", "default_cactus_top.png", "default_cactus_side.png"},
+	paramtype2 = "facedir",
+	is_ground_content = false,
+	groups = {snappy=1, choppy=3, flammable=2},
+	drop = "default:cactus",
+	sounds = default.node_sound_wood_defaults(),
+	on_place = minetest.rotate_node
+})
+
 -- Stuff
 
 path = {}
+
+local rad = WID ^ 2 + 4
 
 -- Set mapgen parameters
 
@@ -60,7 +81,7 @@ end)
 -- On generated function
 
 minetest.register_on_generated(function(minp, maxp, seed)
-	if minp.y ~= -32 then
+	if minp.y > -32 then
 		return
 	end
 
@@ -78,57 +99,70 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local area = VoxelArea:new{MinEdge=emin, MaxEdge=emax}
 	local data = vm:get_data()
 	
-	local c_sand = minetest.get_content_id("default:sand")
+	local c_desand = minetest.get_content_id("default:desert_sand")
 	local c_roadblack = minetest.get_content_id("path:roadblack")
 	local c_roadwhite = minetest.get_content_id("path:roadwhite")
+	local c_cactus = minetest.get_content_id("path:cactus")
 	
 	local sidelen = x1 - x0 + 1
-	local chulens = {x=sidelen, y=sidelen, z=sidelen}
-	local minposxz = {x=x0, y=z0}
+	local chulens = {x=sidelen+1, y=sidelen, z=sidelen}
+	local minposxz = {x=x0-1, y=z0}
 	
 	local nvals_base = minetest.get_perlin_map(np_base, chulens):get2dMap_flat(minposxz)
 	
 	local nixz = 1
 	for z = z0, z1 do
 		for y = y0, y1 do
-			local vi = area:index(x0, y, z)
+			local vi = area:index(x0-1, y, z)
 			local n_xprebase = false
-			for x = x0, x1 do
+			for x = x0-1, x1 do
 				local nodid = data[vi]
 				local n_base = nvals_base[nixz]
-				local n_zprebase = nvals_base[(nixz - 80)]
-				if y == 1 then
-					if (x - x0 > 0
-					and ((n_base >= 0 and n_xprebase < 0)
-					or (n_base < 0 and n_xprebase >= 0)))
-					or (z - z0 > 0
-					and ((n_base >= 0 and n_zprebase < 0)
-					or (n_base < 0 and n_zprebase >= 0))) then
-						data[vi] = c_roadwhite
-						for i = -3, 3 do
-						for k = -3, 3 do
-							if (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2 <= 10 then
-								local vi = area:index(x+i, y, z+k)
-								local nodid = data[vi]
-								if nodid ~= c_roadwhite then
-									data[vi] = c_roadblack
+				local n_zprebase = nvals_base[(nixz - 81)]
+				local chunk = x >= x0
+				if chunk then
+					if y == 1 then
+						if ((n_base >= 0 and n_xprebase < 0)
+						or (n_base < 0 and n_xprebase >= 0))
+						or (z > z0
+						and ((n_base >= 0 and n_zprebase < 0)
+						or (n_base < 0 and n_zprebase >= 0))) then
+							data[vi] = c_roadwhite
+							for i = -WID, WID do
+							for k = -WID, WID do
+								if (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2 <= rad then
+									local vi = area:index(x+i, y, z+k)
+									local nodid = data[vi]
+									if nodid ~= c_roadwhite then
+										data[vi] = c_roadblack
+									end
+								end
+							end
+							end
+						elseif nodid ~= c_roadblack and nodid ~= c_roadwhite then
+							data[vi] = c_desand
+							if math.random() < CACCHA then
+								for j = -1, 5 do
+								for i = -2, 2 do
+									if i == 0 or j == 3 or (j == 4 and math.abs(i) == 2) then
+										local vi = area:index(x + i, y + j, z)
+										data[vi] = c_cactus
+									end
+								end
 								end
 							end
 						end
-						end
-					elseif nodid ~= c_roadblack and nodid ~= c_roadwhite then
-						data[vi] = c_sand
+					elseif y <= 0 then
+						data[vi] = c_desand
 					end
-				elseif y <= 0 then
-					data[vi] = c_sand
 				end
 				n_xprebase = n_base
 				nixz = nixz + 1
 				vi = vi + 1
 			end
-			nixz = nixz - 80
+			nixz = nixz - 81
 		end
-		nixz = nixz + 80
+		nixz = nixz + 81
 	end
 	
 	vm:set_data(data)
