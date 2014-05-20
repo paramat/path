@@ -1,27 +1,41 @@
--- path 0.1.2 by paramat
+-- path 0.1.3 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
 
--- x overgeneration
--- desert sand, cacti
--- width parameter
--- tune diagonal width
+-- hills
+-- z overgeneration
+-- vary flat area width
 
 -- Parameters
 
+local YFLAT = 1
+local TERSCA = 64
+local TFLAV = 0.1
+local TFLAMP = 0.05
 local WID = 3 -- Lane width
-local CACCHA = 1 / 128 ^ 2 -- Cactus chance per node
+local CACCHA = 1 / 256 ^ 2 -- Cactus chance per node
 
--- 2D noise for base terrain
+-- 2D noise for path and terrain
 
 local np_base = {
 	offset = 0,
 	scale = 1,
 	spread = {x=1024, y=1024, z=1024},
 	seed = -9111,
-	octaves = 5,
-	persist = 0.67
+	octaves = 4,
+	persist = 0.5
+}
+
+-- 2D noise for flat area width
+
+local np_flat = {
+	offset = 0,
+	scale = 1,
+	spread = {x=1024, y=1024, z=1024},
+	seed = 11,
+	octaves = 2,
+	persist = 0.5
 }
 
 -- Nodes
@@ -78,10 +92,24 @@ minetest.register_on_respawnplayer(function(player)
 	return true
 end)
 
+-- Function
+
+function path_cactus(x, y, z, area, data)
+	local c_cactus = minetest.get_content_id("path:cactus")
+	for j = -2, 4 do
+	for i = -2, 2 do
+		if i == 0 or j == 2 or (j == 3 and math.abs(i) == 2) then
+			local vi = area:index(x + i, y + j, z)
+			data[vi] = c_cactus
+		end
+	end
+	end
+end
+
 -- On generated function
 
 minetest.register_on_generated(function(minp, maxp, seed)
-	if minp.y > -32 then
+	if minp.y > 48 then
 		return
 	end
 
@@ -102,31 +130,43 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local c_desand = minetest.get_content_id("default:desert_sand")
 	local c_roadblack = minetest.get_content_id("path:roadblack")
 	local c_roadwhite = minetest.get_content_id("path:roadwhite")
-	local c_cactus = minetest.get_content_id("path:cactus")
 	
 	local sidelen = x1 - x0 + 1
-	local chulens = {x=sidelen+1, y=sidelen, z=sidelen}
-	local minposxz = {x=x0-1, y=z0}
+	local chulens = {x=sidelen+1, y=sidelen+1, z=sidelen} -- x = coord x, y = coord z
+	local minposxz = {x=x0-1, y=z0-1}
 	
 	local nvals_base = minetest.get_perlin_map(np_base, chulens):get2dMap_flat(minposxz)
+	local nvals_flat = minetest.get_perlin_map(np_flat, chulens):get2dMap_flat(minposxz)
 	
 	local nixz = 1
-	for z = z0, z1 do
+	for z = z0-1, z1 do
 		for y = y0, y1 do
 			local vi = area:index(x0-1, y, z)
 			local n_xprebase = false
 			for x = x0-1, x1 do
 				local nodid = data[vi]
-				local n_base = nvals_base[nixz]
+				local ysurf
+				local flat = false
 				local n_zprebase = nvals_base[(nixz - 81)]
-				local chunk = x >= x0
+				local chunk = (x >= x0 and z >= z0)
+				local n_flat = nvals_flat[nixz]
+				local tflat = TFLAV + n_flat * TFLAMP
+				
+				local n_base = nvals_base[nixz]
+				local n_absbase = math.abs(n_base)
+				if n_absbase > tflat then
+					ysurf = YFLAT + math.floor((n_absbase - tflat) * TERSCA)
+				else
+					ysurf = YFLAT
+					flat = true
+				end
+				
 				if chunk then
-					if y == 1 then
+					if y == ysurf and flat then
 						if ((n_base >= 0 and n_xprebase < 0)
 						or (n_base < 0 and n_xprebase >= 0))
-						or (z > z0
-						and ((n_base >= 0 and n_zprebase < 0)
-						or (n_base < 0 and n_zprebase >= 0))) then
+						or ((n_base >= 0 and n_zprebase < 0)
+						or (n_base < 0 and n_zprebase >= 0)) then
 							data[vi] = c_roadwhite
 							for i = -WID, WID do
 							for k = -WID, WID do
@@ -142,17 +182,15 @@ minetest.register_on_generated(function(minp, maxp, seed)
 						elseif nodid ~= c_roadblack and nodid ~= c_roadwhite then
 							data[vi] = c_desand
 							if math.random() < CACCHA then
-								for j = -1, 5 do
-								for i = -2, 2 do
-									if i == 0 or j == 3 or (j == 4 and math.abs(i) == 2) then
-										local vi = area:index(x + i, y + j, z)
-										data[vi] = c_cactus
-									end
-								end
-								end
+								path_cactus(x, y+1, z, area, data)
 							end
 						end
-					elseif y <= 0 then
+					elseif y == ysurf then
+						data[vi] = c_desand
+						if math.random() < CACCHA then
+							path_cactus(x, y+1, z, area, data)
+						end
+					elseif y < ysurf then
 						data[vi] = c_desand
 					end
 				end
