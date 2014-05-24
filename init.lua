@@ -1,19 +1,14 @@
--- path 0.1.3 by paramat
+-- path 0.1.4 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
 
--- hills
--- z overgeneration
--- vary flat area width
-
 -- Parameters
 
-local YFLAT = 1
-local TERSCA = 64
-local TFLAV = 0.1
-local TFLAMP = 0.05
-local WID = 3 -- Lane width
+local YFLAT = 1 -- Flat area elevation
+local TERSCA = 64 -- Vertical terrain scale
+local TFLAT = 0.2 -- Flat area width
+local WID = 3 -- Road lane width
 local CACCHA = 1 / 256 ^ 2 -- Cactus chance per node
 
 -- 2D noise for path and terrain
@@ -24,18 +19,18 @@ local np_base = {
 	spread = {x=1024, y=1024, z=1024},
 	seed = -9111,
 	octaves = 4,
-	persist = 0.5
+	persist = 0.4
 }
 
--- 2D noise for flat area width
+-- 2D noise for alt path and tunnels
 
-local np_flat = {
+local np_alt = {
 	offset = 0,
 	scale = 1,
 	spread = {x=1024, y=1024, z=1024},
 	seed = 11,
-	octaves = 2,
-	persist = 0.5
+	octaves = 4,
+	persist = 0.4
 }
 
 -- Nodes
@@ -50,6 +45,7 @@ minetest.register_node("path:roadblack", {
 minetest.register_node("path:roadwhite", {
 	description = "Road White",
 	tiles = {"path_roadwhite.png"},
+	light_source = 7,
 	groups = {cracky=2},
 	sounds = default.node_sound_stone_defaults(),
 })
@@ -127,7 +123,9 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local area = VoxelArea:new{MinEdge=emin, MaxEdge=emax}
 	local data = vm:get_data()
 	
+	local c_air = minetest.get_content_id("air")
 	local c_desand = minetest.get_content_id("default:desert_sand")
+	local c_destone = minetest.get_content_id("default:desert_stone")
 	local c_roadblack = minetest.get_content_id("path:roadblack")
 	local c_roadwhite = minetest.get_content_id("path:roadwhite")
 	
@@ -136,33 +134,56 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local minposxz = {x=x0-1, y=z0-1}
 	
 	local nvals_base = minetest.get_perlin_map(np_base, chulens):get2dMap_flat(minposxz)
-	local nvals_flat = minetest.get_perlin_map(np_flat, chulens):get2dMap_flat(minposxz)
+	local nvals_alt = minetest.get_perlin_map(np_alt, chulens):get2dMap_flat(minposxz)
 	
 	local nixz = 1
 	for z = z0-1, z1 do
 		for y = y0, y1 do
 			local vi = area:index(x0-1, y, z)
 			local n_xprebase = false
+			local n_xprealt = false
 			for x = x0-1, x1 do
 				local nodid = data[vi]
 				local ysurf
 				local flat = false
 				local n_zprebase = nvals_base[(nixz - 81)]
+				local n_zprealt = nvals_alt[(nixz - 81)]
 				local chunk = (x >= x0 and z >= z0)
-				local n_flat = nvals_flat[nixz]
-				local tflat = TFLAV + n_flat * TFLAMP
 				
+				local n_alt = nvals_alt[nixz]
 				local n_base = nvals_base[nixz]
 				local n_absbase = math.abs(n_base)
-				if n_absbase > tflat then
-					ysurf = YFLAT + math.floor((n_absbase - tflat) * TERSCA)
+				if n_absbase > TFLAT then
+					ysurf = YFLAT + math.floor((n_absbase - TFLAT) * TERSCA)
 				else
 					ysurf = YFLAT
 					flat = true
 				end
 				
 				if chunk then
-					if y == ysurf and flat then
+					if y == YFLAT
+					and (((n_alt >= 0 and n_xprealt < 0)
+					or (n_alt < 0 and n_xprealt >= 0))
+					or ((n_alt >= 0 and n_zprealt < 0)
+					or (n_alt < 0 and n_zprealt >= 0))) then
+						data[vi] = c_roadwhite
+						for i = -WID, WID do
+						for k = -WID, WID do
+							if (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2 <= rad then
+								local vi = area:index(x+i, y, z+k)
+								local nodid = data[vi]
+								if nodid ~= c_roadwhite then
+									data[vi] = c_roadblack
+								end
+							end
+						end
+						end
+					elseif y >= YFLAT + 1 and y <= YFLAT + 4 and math.abs(n_alt) < 0.025 then
+						data[vi] = c_air
+					elseif y <= ysurf and y >= YFLAT + 1 and y <= YFLAT + 5
+					and math.abs(n_alt) < 0.035 then
+						data[vi] = c_destone
+					elseif y == ysurf then
 						if ((n_base >= 0 and n_xprebase < 0)
 						or (n_base < 0 and n_xprebase >= 0))
 						or ((n_base >= 0 and n_zprebase < 0)
@@ -185,16 +206,12 @@ minetest.register_on_generated(function(minp, maxp, seed)
 								path_cactus(x, y+1, z, area, data)
 							end
 						end
-					elseif y == ysurf then
-						data[vi] = c_desand
-						if math.random() < CACCHA then
-							path_cactus(x, y+1, z, area, data)
-						end
-					elseif y < ysurf then
+					elseif y < ysurf and nodid ~= c_roadblack and nodid ~= c_roadwhite then
 						data[vi] = c_desand
 					end
 				end
 				n_xprebase = n_base
+				n_xprealt = n_alt
 				nixz = nixz + 1
 				vi = vi + 1
 			end
