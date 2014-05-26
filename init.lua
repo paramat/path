@@ -1,7 +1,9 @@
--- path 0.1.4 by paramat
+-- path 0.1.5 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
+
+-- Tunnel lights spread by abm
 
 -- Parameters
 
@@ -45,9 +47,24 @@ minetest.register_node("path:roadblack", {
 minetest.register_node("path:roadwhite", {
 	description = "Road White",
 	tiles = {"path_roadwhite.png"},
-	light_source = 7,
 	groups = {cracky=2},
 	sounds = default.node_sound_stone_defaults(),
+})
+
+minetest.register_node("path:lightoff", {
+	description = "Light",
+	tiles = {"path_light.png"},
+	light_source = 14,
+	groups = {cracky=3,oddly_breakable_by_hand=3},
+	sounds = default.node_sound_glass_defaults(),
+})
+
+minetest.register_node("path:lighton", {
+	description = "Light",
+	tiles = {"path_light.png"},
+	light_source = 14,
+	groups = {cracky=3,oddly_breakable_by_hand=3},
+	sounds = default.node_sound_glass_defaults(),
 })
 
 minetest.register_node("path:cactus", {
@@ -102,6 +119,20 @@ function path_cactus(x, y, z, area, data)
 	end
 end
 
+-- ABM
+
+minetest.register_abm({
+	nodenames = {"path:lightoff"},
+	interval = 7,
+	chance = 8,
+	action = function(pos, node)
+		minetest.add_node(pos, {name="path:lighton"})
+		pos.y = pos.y - 1
+		minetest.add_node(pos, {name="path:roadblack"})
+		minetest.dig_node(pos)
+	end,
+})
+
 -- On generated function
 
 minetest.register_on_generated(function(minp, maxp, seed)
@@ -128,6 +159,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local c_destone = minetest.get_content_id("default:desert_stone")
 	local c_roadblack = minetest.get_content_id("path:roadblack")
 	local c_roadwhite = minetest.get_content_id("path:roadwhite")
+	local c_light = minetest.get_content_id("path:lightoff")
 	
 	local sidelen = x1 - x0 + 1
 	local chulens = {x=sidelen+1, y=sidelen+1, z=sidelen} -- x = coord x, y = coord z
@@ -167,6 +199,10 @@ minetest.register_on_generated(function(minp, maxp, seed)
 					or ((n_alt >= 0 and n_zprealt < 0)
 					or (n_alt < 0 and n_zprealt >= 0))) then
 						data[vi] = c_roadwhite
+						if y <= ysurf - 7 then
+							local vil = area:index(x, y+5, z)
+							data[vil] = c_light
+						end
 						for i = -WID, WID do
 						for k = -WID, WID do
 							if (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2 <= rad then
@@ -181,7 +217,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 					elseif y >= YFLAT + 1 and y <= YFLAT + 4 and math.abs(n_alt) < 0.025 then
 						data[vi] = c_air
 					elseif y <= ysurf and y >= YFLAT + 1 and y <= YFLAT + 5
-					and math.abs(n_alt) < 0.035 then
+					and math.abs(n_alt) < 0.035 and nodid ~= c_light then
 						data[vi] = c_destone
 					elseif y == ysurf then
 						if ((n_base >= 0 and n_xprebase < 0)
@@ -206,7 +242,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 								path_cactus(x, y+1, z, area, data)
 							end
 						end
-					elseif y < ysurf and nodid ~= c_roadblack and nodid ~= c_roadwhite then
+					elseif y < ysurf and nodid ~= c_roadblack and nodid ~= c_roadwhite and nodid ~= c_light then
 						data[vi] = c_desand
 					end
 				end
