@@ -1,20 +1,21 @@
--- path 0.3.0 by paramat
+-- path 0.3.1 by paramat
 -- For latest stable Minetest and back to 0.4.8
 -- Depends default
 -- License: code WTFPL
 
 -- Parameters
 
-local YCEN = 64 -- Terrain centre
+local YCEN = 32 -- Terrain centre
 local YWAT = 1 -- Terrain centre
-local TERSCA = 32 -- Vertical base terrain scale
+local TERSCA = 16 -- Vertical roads terrain scale
 local YBTOP = 5 -- Beach top
-local YROCK = 128
+local YROCK = 144
 local DEPSEL = 8
-local APPCHA = 1 / 79 ^ 2 -- Appletree chance per node
+local APPCHA = 1 / 4 ^ 2 -- Maximum appletree chance per node
 local TFLO = 0.03 -- Flora threshold. Keeps flora away from roads.
+local TPFLO = 0.02 -- Flora path threshold. Keeps flora away from paths.
 
--- 2D noise for terrain
+-- 2D noise for roads terrain
 
 local np_terrain = {
 	offset = 0,
@@ -32,7 +33,7 @@ local np_mount = {
 	scale = 1,
 	spread = {x=2048, y=2048, z=2048},
 	seed = 1455511,
-	octaves = 7,
+	octaves = 5,
 	persist = 0.4
 }
 
@@ -58,6 +59,28 @@ local np_pathb = {
 	persist = 0.33
 }
 
+-- 2D noise for pathc
+
+local np_pathc = {
+	offset = 0,
+	scale = 1,
+	spread = {x=512, y=512, z=512},
+	seed = -80,
+	octaves = 4,
+	persist = 0.33
+}
+
+-- 2D noise for trees
+
+local np_tree = {
+	offset = 0,
+	scale = 1,
+	spread = {x=256, y=256, z=256},
+	seed = 133338,
+	octaves = 3,
+	persist = 0.4
+}
+
 -- Nodes
 
 minetest.register_node("path:grass", {
@@ -80,6 +103,35 @@ minetest.register_node("path:dirt", {
 	sounds = default.node_sound_dirt_defaults(),
 })
 
+minetest.register_node("path:path", {
+	description = "Path",
+	tiles = {"path_path.png"},
+	is_ground_content = false,
+	groups = {crumbly=2},
+	drop = "default:dirt",
+	sounds = default.node_sound_dirt_defaults(),
+})
+
+minetest.register_node("path:pathslab", {
+	description = "Path slab",
+	tiles = {"path_path.png"},
+	drawtype = "nodebox",
+	paramtype = "light",
+	is_ground_content = false,
+	sunlight_propagates = true,
+	node_box = {
+		type = "fixed",
+		fixed = {{-0.5, -0.5, -0.5, 0.5, 0, 0.5}},
+	},
+	selection_box = {
+		type = "fixed",
+		fixed = {{-0.5, -0.5, -0.5, 0.5, 0, 0.5}},
+	},
+	groups = {crumbly=2},
+	drop = "default:dirt",
+	sounds = default.node_sound_dirt_defaults(),
+})
+
 minetest.register_node("path:stone", {
 	description = "Stone",
 	tiles = {"default_stone.png"},
@@ -90,7 +142,7 @@ minetest.register_node("path:stone", {
 })
 
 minetest.register_node("path:appleleaf", {
-	description = "Appletree Leaves",
+	description = "Appletree leaves",
 	drawtype = "allfaces_optional",
 	visual_scale = 1.3,
 	tiles = {"default_leaves.png"},
@@ -101,20 +153,19 @@ minetest.register_node("path:appleleaf", {
 })
 
 minetest.register_node("path:roadblack", {
-	description = "Road Black",
+	description = "Road black",
 	tiles = {"path_roadblack.png"},
 	groups = {cracky=2},
 	sounds = default.node_sound_stone_defaults(),
 })
 
 minetest.register_node("path:roadslab", {
-	description = "Road Slab",
+	description = "Road slab",
 	tiles = {"path_roadblack.png"},
 	drawtype = "nodebox",
 	paramtype = "light",
 	is_ground_content = false,
 	sunlight_propagates = true,
-	buildable_to = false,
 	node_box = {
 		type = "fixed",
 		fixed = {{-0.5, -0.5, -0.5, 0.5, 0, 0.5}},
@@ -128,7 +179,7 @@ minetest.register_node("path:roadslab", {
 })
 
 minetest.register_node("path:roadwhite", {
-	description = "Road White",
+	description = "Road white",
 	tiles = {"path_roadwhite.png"},
 	groups = {cracky=2},
 	sounds = default.node_sound_stone_defaults(),
@@ -141,7 +192,7 @@ path = {}
 -- Set mapgen parameters
 
 minetest.register_on_mapgen_init(function(mgparams)
-	minetest.set_mapgen_params({mgname="singlenode", water_level=-32})
+	minetest.set_mapgen_params({mgname="singlenode"})
 end)
 
 -- Spawn player
@@ -217,6 +268,8 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local c_water = minetest.get_content_id("default:water_source")
 	local c_sand = minetest.get_content_id("default:sand")
 
+	local c_path = minetest.get_content_id("path:path")
+	local c_pathslab = minetest.get_content_id("path:pathslab")
 	local c_grass = minetest.get_content_id("path:grass")
 	local c_dirt = minetest.get_content_id("path:dirt")
 	local c_stone = minetest.get_content_id("path:stone")
@@ -235,6 +288,8 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local nvals_mount = minetest.get_perlin_map(np_mount, chulensxz):get2dMap_flat(minposxz)
 	local nvals_patha = minetest.get_perlin_map(np_patha, chulensxz):get2dMap_flat(minposxz)
 	local nvals_pathb = minetest.get_perlin_map(np_pathb, chulensxz):get2dMap_flat(minposxz)
+	local nvals_pathc = minetest.get_perlin_map(np_pathc, chulensxz):get2dMap_flat(minposxz)
+	local nvals_tree = minetest.get_perlin_map(np_tree, chulensxz):get2dMap_flat(minposxz)
 	
 	local nixz = 1
 	local nixyz = 1
@@ -244,13 +299,16 @@ minetest.register_on_generated(function(minp, maxp, seed)
 			local viu = area:index(x0-1, y-1, z)
 			local n_xprepatha = false
 			local n_xprepathb = false
+			local n_xprepathc = false
 			local fimadep = math.max(DEPSEL * (1 - (y - YWAT) / YROCK), 0)
 			for x = x0-1, x1 do
 				local nodid = data[vi]
 				local nodidu = data[viu]
 				local n_zprepatha = nvals_patha[(nixz - overlen)]
 				local n_zprepathb = nvals_pathb[(nixz - overlen)]
+				local n_zprepathc = nvals_pathc[(nixz - overlen)]
 				local chunk = (x >= x0 and z >= z0)
+				local n_tree = math.min(math.max(nvals_tree[nixz], 0), 1)
 				
 				local n_patha = nvals_patha[nixz]
 				local n_abspatha = math.abs(n_patha)
@@ -258,9 +316,13 @@ minetest.register_on_generated(function(minp, maxp, seed)
 				local n_pathb = nvals_pathb[nixz]
 				local n_abspathb = math.abs(n_pathb)
 
+				local n_pathc = nvals_pathc[nixz]
+				local n_abspathc = math.abs(n_pathc)
+
 				local n_terrain = nvals_terrain[nixz]
 				local n_mount = nvals_mount[nixz]
-				local ysurf = YCEN + math.floor((n_terrain + n_abspatha ^ 2 * n_abspathb ^ 2 * n_mount * 32) * TERSCA)
+				local ysurf = YCEN
+				+ math.floor((n_terrain + n_abspatha ^ 2 * n_abspathb ^ 2 * n_mount * 32) * TERSCA)
 				
 				if chunk then
 					if y == ysurf and y > YBTOP and y < YROCK then
@@ -291,7 +353,8 @@ minetest.register_on_generated(function(minp, maxp, seed)
 									if nodid ~= c_roadblack
 									and nodid ~= c_roadwhite
 									and nodid ~= c_grass
-									and nodid ~= c_dirt then
+									and nodid ~= c_dirt
+									and nodid ~= c_path then
 										data[vi] = c_roadslab
 										if nodida == c_grass then
 											data[via] = c_air
@@ -327,8 +390,45 @@ minetest.register_on_generated(function(minp, maxp, seed)
 									if nodid ~= c_roadblack
 									and nodid ~= c_roadwhite
 									and nodid ~= c_grass
-									and nodid ~= c_dirt then
+									and nodid ~= c_dirt
+									and nodid ~= c_path then
 										data[vi] = c_roadslab
+										if nodida == c_grass then
+											data[via] = c_air
+										end
+									end
+								end
+							end
+							end
+						elseif ((n_pathc >= 0 and n_xprepathc < 0)
+						or (n_pathc < 0 and n_xprepathc >= 0))
+						or ((n_pathc >= 0 and n_zprepathc < 0)
+						or (n_pathc < 0 and n_zprepathc >= 0)) then
+							for i = -2, 2 do
+							for k = -2, 2 do
+								local radsq = (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2
+								if radsq <= 2 then
+									local vi = area:index(x+i, y, z+k)
+									local via = area:index(x+i, y+1, z+k)
+									local nodid = data[vi]
+									local nodida = data[via]
+									if nodid ~= c_roadblack then
+										data[vi] = c_path
+										if nodida == c_grass then
+											data[via] = c_air
+										end
+									end
+								elseif radsq <= 5 then
+									local vi = area:index(x+i, y, z+k)
+									local via = area:index(x+i, y+1, z+k)
+									local nodid = data[vi]
+									local nodida = data[via]
+									if nodid ~= c_roadblack
+									and nodid ~= c_roadwhite
+									and nodid ~= c_path
+									and nodid ~= c_grass
+									and nodid ~= c_dirt then
+										data[vi] = c_pathslab
 										if nodida == c_grass then
 											data[via] = c_air
 										end
@@ -338,11 +438,13 @@ minetest.register_on_generated(function(minp, maxp, seed)
 							end
 						elseif nodid ~= c_roadblack
 						and nodid ~= c_roadwhite
+						and nodid ~= c_path
 						and nodidu ~= c_roadblack
-						and nodidu ~= c_roadslab then
+						and nodidu ~= c_roadslab
+						and nodidu ~= c_pathslab then
 							data[vi] = c_grass
-							if n_abspatha > TFLO and n_abspathb > TFLO
-							and math.random() < APPCHA then
+							if n_abspatha > TFLO and n_abspathb > TFLO and n_abspathc > TPFLO
+							and math.random() < APPCHA * n_tree and fimadep >= 2 then
 								path_appletree(x, y+1, z, area, data)
 							end
 						end
@@ -350,7 +452,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 						data[vi] = c_stone
 					elseif y <= YBTOP and y <= ysurf then
 						data[vi] = c_sand
-					elseif y < ysurf and nodid ~= c_roadblack then
+					elseif y < ysurf and nodid ~= c_roadblack and nodid ~= c_path then
 						data[vi] = c_dirt
 					elseif y <= YWAT and y > ysurf then -- water
 						data[vi] = c_water
@@ -358,6 +460,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 				end
 				n_xprepatha = n_patha
 				n_xprepathb = n_pathb
+				n_xprepathc = n_pathc
 				nixz = nixz + 1
 				nixyz = nixyz + 1
 				vi = vi + 1
