@@ -3,9 +3,8 @@
 -- Depends default
 -- License: code WTFPL
 
--- 2 path systems
--- dark pathslab side textures
--- simpler mapgen: amplify terrain noise
+-- remove dark pathslab side textures
+-- paths don't replace road slab
 
 -- Parameters
 
@@ -13,7 +12,7 @@ local YCEN = 40 -- Terrain centre
 local YWAT = 1 -- Water level
 local TERSCA = 24 -- Vertical roads terrain scale
 local YBTOP = 5 -- Beach top
-local YROCK = 256 -- Dirt thins to 1 node at this distance above YWAT
+local YROCK = 192 -- Dirt thins out at this y
 local DEPSEL = 8 -- Depth of dirt at sea level
 local APPCHA = 1 / 4 ^ 2 -- Maximum appletree chance per node
 local TFLO = 0.015 -- Flora threshold. Keeps flora away from roads.
@@ -24,9 +23,9 @@ local TPFLO = 0.02 -- Flora path threshold. Keeps flora away from paths.
 local np_terrain = {
 	offset = 0,
 	scale = 1,
-	spread = {x=512, y=512, z=512},
+	spread = {x=768, y=768, z=768},
 	seed = -9111,
-	octaves = 4,
+	octaves = 6,
 	persist = 0.5
 }
 
@@ -116,9 +115,9 @@ minetest.register_node("path:path", {
 	sounds = default.node_sound_dirt_defaults(),
 })
 
-minetest.register_node("path:pathslab", { -- pathside texture darker because sunlight propagates = true
+minetest.register_node("path:pathslab", {
 	description = "Path slab",
-	tiles = {"path_path.png", "path_pathside.png", "path_pathside.png"},
+	tiles = {"path_path.png"},
 	drawtype = "nodebox",
 	paramtype = "light",
 	is_ground_content = false,
@@ -202,7 +201,7 @@ end)
 -- Spawn player
 
 function spawnplayer(player)
-	player:setpos({x=0, y=48, z=0})
+	player:setpos({x=0, y=0, z=0})
 end
 
 minetest.register_on_newplayer(function(player)
@@ -305,7 +304,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 			local n_xprepathb = false
 			local n_xprepathc = false
 			local n_xprepathd = false
-			local fimadep = math.max(DEPSEL * (1 - (y - YWAT) / YROCK), 1)
+			local fimadep = math.max(DEPSEL * (1 - (y - YWAT) / (YROCK - YWAT)), 0)
 			for x = x0-1, x1 do
 				local nodid = data[vi]
 				local nodidu = data[viu]
@@ -330,10 +329,10 @@ minetest.register_on_generated(function(minp, maxp, seed)
 
 				local n_terrain = nvals_terrain[nixz]
 				local ysurf = YCEN
-				+ math.floor(n_terrain * (1 + n_abspatha ^ 2 * n_abspathb ^ 2 * 32) * TERSCA)
+				+ math.floor(n_terrain * (1 + n_abspatha ^ 2 * n_abspathb ^ 2 * 16) * TERSCA)
 
 				if chunk then
-					if y == ysurf and y > YBTOP then
+					if y == ysurf and y > YBTOP and y < YROCK then
 						if ((n_patha >= 0 and n_xprepatha < 0)
 						or (n_patha < 0 and n_xprepatha >= 0))
 						or ((n_patha >= 0 and n_zprepatha < 0)
@@ -421,6 +420,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 									local nodid = data[vi]
 									local nodida = data[via]
 									if nodid ~= c_roadblack
+									and nodid ~= c_roadslab
 									and nodid ~= c_roadwhite then
 										data[vi] = c_path
 										if nodida == c_grass then
@@ -433,6 +433,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 									local nodid = data[vi]
 									local nodida = data[via]
 									if nodid ~= c_roadblack
+									and nodid ~= c_roadslab
 									and nodid ~= c_roadwhite
 									and nodid ~= c_path
 									and nodid ~= c_grass
@@ -458,6 +459,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 									local nodid = data[vi]
 									local nodida = data[via]
 									if nodid ~= c_roadblack
+									and nodid ~= c_roadslab
 									and nodid ~= c_roadwhite then
 										data[vi] = c_path
 										if nodida == c_grass then
@@ -470,6 +472,7 @@ minetest.register_on_generated(function(minp, maxp, seed)
 									local nodid = data[vi]
 									local nodida = data[via]
 									if nodid ~= c_roadblack
+									and nodid ~= c_roadslab
 									and nodid ~= c_roadwhite
 									and nodid ~= c_path
 									and nodid ~= c_grass
